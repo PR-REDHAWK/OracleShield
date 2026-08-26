@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+
+# Secrets
+.env
+.streamlit/secrets.toml
+
+# Large/private datasets and trained artifacts
+*.csv
+*.xlsx
+*.xls
+*.pcap
+*.pcapng
+*.joblib
+*.pkl
+*.pt
+*.pth
+
+# Runtime state
+oracle_shield_ledger.json
+oracle_shield_memory.json
+world_model_meta.json
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

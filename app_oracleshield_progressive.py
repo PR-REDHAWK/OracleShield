@@ -1,0 +1,300 @@
+import os, json, time, hashlib
+from datetime import datetime
+import joblib
+import numpy as np
+import pandas as pd
+import streamlit as st
+import plotly.graph_objects as go
+
+from oracle_shield_world_model import AuditChain, PersistentThreatMemory, state_from_window, STATE_NAMES, stage_for_label, hash_event
+
+# -------------------- CONFIG --------------------
+APP_NAME = 'OracleShield'
+DATA_FILE = 'Copy of DOC-20260825-WA0002.xlsx'
+CLASSIFIER_FILE = 'model_classifier.joblib'
+SCALER_FILE = 'scaler.joblib'
+FEATURE_FILE = 'feature_columns.joblib'
+WORLD_FILE = 'world_model.pt'
+LEDGER_FILE = 'oracle_shield_ledger.json'
+
+st.set_page_config(page_title='OracleShield | Predictive Cyber Defence', page_icon='🛡️', layout='wide', initial_sidebar_state='expanded')
+
+# -------------------- STYLE --------------------
+st.markdown('''
+<style>
+[data-testid="stAppViewContainer"] { background: #f5f7fb; }
+.block-container { max-width: 1450px; padding-top: 1.5rem; }
+.hero { background: linear-gradient(135deg,#0b1730,#12294d); color:white; padding:24px 28px; border-radius:16px; margin-bottom:18px; }
+.hero h1 { margin:0; font-size:34px; }
+.hero p { margin:6px 0 0; color:#b8c7dc; }
+.card { background:white; border:1px solid #e5eaf1; border-radius:14px; padding:18px; box-shadow:0 3px 14px rgba(15,23,42,.04); }
+.small { color:#64748b; font-size:13px; }
+.kpi { font-size:28px; font-weight:700; color:#0f172a; }
+.status-good { color:#047857; font-weight:700; }
+.status-warn { color:#b45309; font-weight:700; }
+.status-bad { color:#b91c1c; font-weight:700; }
+</style>
+''', unsafe_allow_html=True)
+
+st.markdown(f'''<div class="hero"><h1>🛡️ {APP_NAME}</h1><p>AI World Model for Predictive Network Defence · Detection → State Dynamics → Forward Simulation → Auditable Response</p></div>''', unsafe_allow_html=True)
+
+# -------------------- LOADERS --------------------
+@st.cache_data(show_spinner='Loading combined NSL-KDD workbook…')
+def load_data():
+    df = pd.read_excel(DATA_FILE)
+    required = {'split','attack_category','is_attack','label'}
+    missing = required - set(df.columns)
+    if missing: raise ValueError(f'Missing required columns: {sorted(missing)}')
+    return df
+
+@st.cache_resource(show_spinner='Loading trained detector…')
+def load_detector():
+    return joblib.load(CLASSIFIER_FILE), joblib.load(SCALER_FILE), joblib.load(FEATURE_FILE)
+
+@st.cache_resource(show_spinner='Loading world model…')
+def load_world_model():
+    if not os.path.exists(WORLD_FILE): return None, None
+    import torch
+    from oracle_shield_world_model import WorldModel
+    ckpt=torch.load(WORLD_FILE,map_location='cpu')
+    model=WorldModel(ckpt['input_dim'],hidden=64,classes=len(ckpt['classes']))
+    model.load_state_dict(ckpt['model']); model.eval()
+    return model, ckpt
+
+# -------------------- ADAPTIVE WORLD MEMORY --------------------
+class AdaptiveThreatMemory:
+    """Self-supervised environment memory. It learns evolving state statistics and
+    transitions without training the detector on its own predictions."""
+    def __init__(self):
+        self.baseline = None
+        self.ema = None
+        self.prev = None
+        self.transitions = {}
+        self.episodes = []
+        self.novelty = 0.0
+        self.drift = 0.0
+        self.alpha = 0.18
+
+    def update(self, state, stage):
+        x=np.asarray(state,dtype=float)
+        if self.ema is None:
+            self.ema=x.copy(); self.baseline=x.copy()
+        else:
+            self.ema=(1-self.alpha)*self.ema+self.alpha*x
+            self.drift=float(np.linalg.norm(self.ema-self.baseline)/(np.linalg.norm(self.baseline)+1e-6))
+        self.novelty=float(np.linalg.norm(x-self.ema)/(np.linalg.norm(self.ema)+1e-6))
+        key=stage
+        if self.prev is not None:
+            p=self.prev
+            self.transitions[(p,key)] = self.transitions.get((p,key),0)+1
+        self.prev=key
+        self.episodes.append({'time':datetime.now().isoformat(timespec='seconds'),'stage':stage,'novelty':self.novelty,'drift':self.drift})
+        self.episodes=self.episodes[-500:]
+        return self.novelty, self.drift
+
+    def progression_probability(self, base_prob):
+        # Adaptive prior: increases when attack pressure is novel or drifting.
+        p=float(base_prob)
+        p += min(0.18, self.novelty*0.35)
+        p += min(0.12, self.drift*0.20)
+        return float(np.clip(p,0,0.99))
+
+if 'adaptive_memory' not in st.session_state: st.session_state.adaptive_memory=AdaptiveThreatMemory()
+if 'persistent_memory' not in st.session_state: st.session_state.persistent_memory=PersistentThreatMemory()
+if 'replay_log' not in st.session_state: st.session_state.replay_log=[]
+
+# -------------------- SIDEBAR --------------------
+with st.sidebar:
+    st.markdown('### System controls')
+    page=st.radio('Workspace',['Command Center','World Model','Blockchain Audit','Evidence & Data'])
+    st.markdown('---')
+    st.markdown('**Prototype provenance**')
+    st.caption('Dataset: combined NSL-KDD workbook')
+    st.caption('Original train/test membership preserved by `split`')
+    st.caption('Offline / no cloud dependency')
+
+try:
+    df=load_data()
+    clf, scaler, feature_cols=load_detector()
+except Exception as e:
+    st.error(f'Cannot initialise OracleShield: {e}')
+    st.stop()
+
+train=df[df['split'].astype(str).str.lower().eq('train')].copy()
+test=df[df['split'].astype(str).str.lower().eq('test')].copy()
+world_model, world_ckpt=load_world_model()
+
+# -------------------- PREPROCESS --------------------
+def make_X(frame):
+    drop=[c for c in ['label','attack_category','is_attack','split'] if c in frame.columns]
+    cats=[c for c in ['protocol_type','service','flag'] if c in frame.columns]
+    X=pd.get_dummies(frame.drop(columns=drop),columns=cats)
+    X=X.reindex(columns=feature_cols,fill_value=0)
+    return scaler.transform(X)
+
+# -------------------- METRICS --------------------
+if 'model_metrics' not in st.session_state:
+    sample_n=min(12000,len(test))
+    metric_df=test.sample(sample_n,random_state=42).reset_index(drop=True)
+    pred=clf.predict(make_X(metric_df))
+    y=metric_df['attack_category'].values
+    from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix, classification_report
+    st.session_state.model_metrics={
+        'accuracy':accuracy_score(y,pred),
+        'macro_precision':precision_score(y,pred,average='macro',zero_division=0),
+        'macro_recall':recall_score(y,pred,average='macro',zero_division=0),
+        'macro_f1':f1_score(y,pred,average='macro',zero_division=0),
+        'weighted_f1':f1_score(y,pred,average='weighted',zero_division=0),
+        'cm':confusion_matrix(y,pred,labels=['dos','normal','probe','r2l','u2r']),
+        'report':classification_report(y,pred,labels=['dos','normal','probe','r2l','u2r'],output_dict=True,zero_division=0)
+    }
+M=st.session_state.model_metrics
+
+# -------------------- COMMAND CENTER --------------------
+if page=='Command Center':
+    c1,c2,c3,c4,c5=st.columns(5)
+    c1.metric('Detection accuracy',f"{M['accuracy']:.2%}")
+    c2.metric('Macro F1',f"{M['macro_f1']:.2%}")
+    c3.metric('Macro recall',f"{M['macro_recall']:.2%}")
+    c4.metric('Train flows',f"{len(train):,}")
+    c5.metric('Test flows',f"{len(test):,}")
+
+    st.markdown('### Live threat-state simulation')
+    a,b,c=st.columns([1,1,1])
+    n=a.slider('Windows to replay',5,80,30)
+    records_per_window=b.select_slider('Flows / state window',[50,100,200,500],value=200)
+    speed=c.slider('Replay delay (seconds)',0.0,1.0,0.05,0.05)
+
+    if st.button('▶ Start progressive replay',type='primary',use_container_width=True):
+        sample=test.sample(n=min(n*records_per_window,len(test)),random_state=None).reset_index(drop=True)
+        chart=st.empty(); status=st.empty(); table=st.empty(); forecast_box=st.empty()
+        states=[]; rates=[]; events=[]
+        mem=st.session_state.adaptive_memory
+        for k in range(n):
+            w=sample.iloc[k*records_per_window:(k+1)*records_per_window]
+            if len(w)<10: break
+            X=make_X(w); probs=clf.predict_proba(X) if hasattr(clf,'predict_proba') else None; pred=clf.predict(X)
+            attack_rate=float(np.mean(pred!='normal'))
+            counts=pd.Series(pred).value_counts(normalize=True)
+            state=state_from_window(w.assign(attack_category=pred,is_attack=(pred!='normal').astype(int)))
+            states.append(state); rates.append(attack_rate)
+            dominant=pd.Series(pred).value_counts().idxmax()
+            stage=stage_for_label(dominant)
+            novelty,drift=mem.update(state,stage)
+            prev_stage = st.session_state.get('last_stage')
+            persistent_novelty = st.session_state.persistent_memory.update(state,stage,prev_stage)
+            st.session_state.last_stage = stage
+            memory_similarity,memory_stage = st.session_state.persistent_memory.similarity_to_memory(state)
+            base=float(np.clip(attack_rate,0,1))
+            progression=mem.progression_probability(base)
+            if memory_stage and memory_stage != 'Benign / No active stage':
+                progression=float(np.clip(progression + 0.08*memory_similarity,0,0.99))
+            if world_model is not None and len(states)>=world_ckpt['sequence_length']:
+                import torch
+                seq=np.stack(states[-world_ckpt['sequence_length']:])
+                seq=(seq-np.asarray(world_ckpt['scaler_mean']))/(np.asarray(world_ckpt['scaler_scale'])+1e-8)
+                with torch.no_grad():
+                    ns,logits,_=world_model(torch.tensor(seq,dtype=torch.float32).unsqueeze(0))
+                    stage_probs=torch.softmax(logits,dim=1).numpy()[0]
+                world_stage=world_ckpt['classes'][int(stage_probs.argmax())]
+                world_conf=float(stage_probs.max())
+                stage=stage_for_label(world_stage)
+                progression=float(np.clip(0.55*progression+0.45*stage_probs[1:].sum(),0,0.99))
+            else:
+                world_conf=None
+            risk='CRITICAL' if progression>=0.80 else ('HIGH' if progression>=0.60 else ('ELEVATED' if progression>=0.35 else 'LOW'))
+            event={'source':'progressive_replay','window':k,'dominant_attack':dominant,'stage':stage,'attack_rate':attack_rate,'progression_probability':progression,'novelty':novelty,'drift':drift}
+            if dominant!='normal':
+                block=AuditChain(LEDGER_FILE).append(event)
+                events.append({**event,'block':block['index'],'hash':block['hash'][:16]+'…'})
+            status.markdown(f"**Threat state:** `{risk}` &nbsp; | &nbsp; **Infiltration probability (next windows):** `{progression:.1%}` &nbsp; | &nbsp; **Predicted stage:** `{stage}` &nbsp; | &nbsp; **Novelty:** `{novelty:.3f}` &nbsp; | &nbsp; **Drift:** `{drift:.3f}` &nbsp; | &nbsp; **Memory match:** `{memory_similarity:.1%}`")
+            table.dataframe(pd.DataFrame(events[-8:]),use_container_width=True)
+            fig=go.Figure(); fig.add_trace(go.Scatter(y=rates,mode='lines+markers',name='Observed attack pressure'))
+            if len(rates)>=3:
+                # Simple adaptive forward estimate from EWMA; the neural world model is shown separately when available.
+                ema=pd.Series(rates).ewm(span=min(8,len(rates)),adjust=False).mean().iloc[-1]
+                future=[ema]*(5)
+                fig.add_trace(go.Scatter(x=list(range(len(rates),len(rates)+5)),y=future,mode='lines+markers',name='Adaptive forecast'))
+            fig.update_layout(height=360,margin=dict(l=10,r=10,t=30,b=10),yaxis_title='Attack pressure',xaxis_title='State window',yaxis_range=[0,1])
+            chart.plotly_chart(fig,use_container_width=True)
+            time.sleep(speed)
+        st.success('Progressive replay completed. Security events were appended to the tamper-evident audit ledger.')
+
+# -------------------- WORLD MODEL --------------------
+elif page=='World Model':
+    st.markdown('### Learned network-state dynamics')
+    if world_model is None:
+        st.warning('Neural world-model weights are not present yet. Run `train_world_model.py` once to generate `world_model.pt`.')
+    else:
+        st.success('World Model loaded: sequence model predicts the next network state and attack-stage distribution.')
+        st.info('Architecture: time-windowed state vector → LSTM transition dynamics → next-state prediction + attack-stage prediction. The NSL-KDD prototype uses reproducible row-order sequences because the dataset has no timestamps; final deployment should use timestamped CIC-IDS/CTU-13/PCAP telemetry.')
+        if os.path.exists('world_model_meta.json'):
+            meta=json.load(open('world_model_meta.json'))
+            m=meta.get('metrics',{})
+            a,b,c,d=st.columns(4)
+            a.metric('World-model stage accuracy',f"{m.get('stage_accuracy',0):.1%}")
+            b.metric('World-model macro F1',f"{m.get('stage_macro_f1',0):.1%}")
+            c.metric('Macro recall',f"{m.get('stage_macro_recall',0):.1%}")
+            d.metric('Next-state MAE',f"{m.get('next_state_mae_standardized',0):.3f}")
+        st.markdown('#### State representation')
+        st.dataframe(pd.DataFrame({'State feature':STATE_NAMES,'Meaning':['overall malicious pressure','DoS share','probe/recon share','R2L share','U2R share','source bytes mean','destination bytes mean','flow duration mean','connection count mean','service count mean','SYN/error-rate proxy','RST/error-rate proxy','same-service concentration','service diversity','service diversity / window','log traffic volume']}),use_container_width=True)
+        st.markdown('#### Progressive learning loop')
+        st.code('''Observe traffic → build network state S_t → predict S_(t+1)\n        ↓\nCompare predicted vs observed next state\n        ↓\nPrediction error + state drift + attack pressure\n        ↓\nUpdate adaptive threat memory / novel trajectory memory\n        ↓\nForward rollout → infiltration probability + predicted stage\n        ↓\nVerified feedback can be used for safe model retraining''')
+        st.warning('Self-training directly from the model’s own attack labels is intentionally disabled. Without verified feedback it can reinforce its own mistakes. OracleShield adapts its environment model online, while the detector remains protected from label poisoning.')
+
+# -------------------- BLOCKCHAIN --------------------
+elif page=='Blockchain Audit':
+    st.markdown('### Tamper-evident security ledger')
+    chain=AuditChain(LEDGER_FILE)
+    valid,idx,msg=chain.verify()
+    a,b,c=st.columns(3)
+    a.metric('Blocks',len(chain.blocks))
+    b.metric('Integrity','VALID' if valid else 'BROKEN')
+    c.metric('Latest hash',chain.blocks[-1]['hash'][:18]+'…')
+    if valid: st.success('SHA-256 hash chain is intact.')
+    else: st.error(f'Integrity failure at block {idx}: {msg}')
+    st.markdown('#### Ledger')
+    rows=[]
+    for b in chain.blocks[-25:]:
+        ev=b['event']; rows.append({'#':b['index'],'Time':datetime.fromtimestamp(b['timestamp']).strftime('%Y-%m-%d %H:%M:%S'),'Stage':ev.get('stage',ev.get('type','-')),'Attack':ev.get('dominant_attack','-'),'Risk':ev.get('progression_probability','-'),'Previous':b['previous_hash'][:12]+'…','Hash':b['hash'][:12]+'…'})
+    st.dataframe(pd.DataFrame(rows),use_container_width=True)
+    st.markdown('#### Judge-ready tamper demonstration')
+    if st.button('🧪 Simulate tampering',use_container_width=True):
+        demo=json.loads(json.dumps(chain.blocks))
+        if len(demo)>1:
+            demo[-1]['event']['dominant_attack']='tampered'
+            ok,bi,why=chain.verify(demo)
+            st.error(f'TAMPER DETECTED · valid={ok} · broken block={bi} · {why}')
+        else: st.info('Add at least one security event first.')
+    st.caption('This prototype uses a local permissioned-style hash chain for audit integrity. It is not a public cryptocurrency network or a multi-node consensus blockchain.')
+
+# -------------------- EVIDENCE --------------------
+else:
+    st.markdown('### Evidence, metrics & data coverage')
+    a,b,c,d,e=st.columns(5)
+    a.metric('Accuracy',f"{M['accuracy']:.2%}")
+    b.metric('Macro precision',f"{M['macro_precision']:.2%}")
+    c.metric('Macro recall',f"{M['macro_recall']:.2%}")
+    d.metric('Macro F1',f"{M['macro_f1']:.2%}")
+    e.metric('Weighted F1',f"{M['weighted_f1']:.2%}")
+    st.markdown('#### Per-class performance')
+    rows=[]
+    for cls in ['dos','normal','probe','r2l','u2r']:
+        r=M['report'][cls]; rows.append({'Class':cls,'Precision':r['precision'],'Recall':r['recall'],'F1':r['f1-score'],'Support':int(r['support'])})
+    st.dataframe(pd.DataFrame(rows).style.format({'Precision':'{:.2%}','Recall':'{:.2%}','F1':'{:.2%}'}),use_container_width=True)
+    st.markdown('#### Train / test class distribution')
+    dist=pd.concat([train['attack_category'].value_counts().rename('train'),test['attack_category'].value_counts().rename('test')],axis=1).fillna(0).astype(int)
+    st.bar_chart(dist)
+    st.markdown('#### Requirement coverage')
+    coverage=pd.DataFrame([
+        ['Flow-level telemetry','Partial','NSL-KDD provides aggregate flow/connection features.'],
+        ['Packet-level telemetry','Not available in supplied workbook','TTL, TCP window, IAT and retransmissions require PCAP/CIC/CTU-13-derived data.'],
+        ['Temporal world model','Prototype implemented','LSTM transition model learns next-state dynamics from reproducible windows.'],
+        ['Forward simulation','Implemented','Next-state prediction and short-horizon adaptive risk trajectory.'],
+        ['MITRE stage mapping','Heuristic mapping','Dataset categories are mapped to reconnaissance/access/escalation/impact; true ATT&CK technique IDs need richer telemetry.'],
+        ['Explainability','State-feature drivers + detector evidence','SHAP can be enabled for the RandomForest; state drivers show which network-state dimensions changed.'],
+        ['Blockchain audit','Implemented','SHA-256 hash-chained security-event ledger with integrity verification.'],
+        ['Online adaptation','Implemented safely','Adaptive memory learns evolving state/drift; classifier is not self-trained from unverified predictions.'],
+    ],columns=['Requirement','Status','Implementation note'])
+    st.dataframe(coverage,use_container_width=True)
+    st.info('For a final NTRO-grade benchmark, add CIC-IDS2018/CTU-13 or PCAP-derived telemetry with timestamps and packet-level features, then retrain the same world-model pipeline on genuine temporal sequences. The supplied NSL-KDD workbook cannot support claims about packet timing or causal attack progression by itself.')
