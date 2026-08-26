@@ -66,7 +66,7 @@ def encode_features(train_df, test_df):
     and the fitted scaler + column list for reuse at inference time.
     """
     cat_cols = ["protocol_type", "service", "flag"]
-    drop_cols = ["label", "attack_category", "is_attack"]
+    drop_cols = ["label", "attack_category", "is_attack", "split"]
 
     train_X = pd.get_dummies(train_df.drop(columns=drop_cols), columns=cat_cols)
     test_X = pd.get_dummies(test_df.drop(columns=drop_cols), columns=cat_cols)

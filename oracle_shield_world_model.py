@@ -9,15 +9,36 @@ import pandas as pd
 try:
     import torch
     from torch import nn
+
     class WorldModel(nn.Module):
         def __init__(self, d_in, hidden=64, classes=5):
             super().__init__()
-            self.lstm=nn.LSTM(d_in, hidden, num_layers=1, batch_first=True)
-            self.next_state=nn.Sequential(nn.Linear(hidden,64),nn.ReLU(),nn.Linear(64,d_in))
-            self.stage=nn.Linear(hidden,classes)
-        def forward(self,x):
-            h,_=self.lstm(x); z=h[:,-1]
+
+            self.lstm = nn.LSTM(
+                d_in,
+                hidden,
+                num_layers=1,
+                batch_first=True
+            )
+
+            self.next_state = nn.Sequential(
+                nn.Linear(hidden, 64),
+                nn.ReLU(),
+                nn.Linear(64, d_in)
+            )
+
+            self.stage = nn.Sequential(
+                nn.Linear(hidden, 64),
+                nn.ReLU(),
+                nn.Dropout(0.2),
+                nn.Linear(64, classes)
+            )
+
+        def forward(self, x):
+            h, _ = self.lstm(x)
+            z = h[:, -1]
             return self.next_state(z), self.stage(z), z
+
 except Exception:
     WorldModel = None
 
@@ -50,41 +71,184 @@ def _safe_mean(s):
 
 def state_from_window(df: pd.DataFrame) -> np.ndarray:
     n = max(len(df), 1)
-    vc = df['attack_category'].value_counts(normalize=True) if 'attack_category' in df else pd.Series()
-    attack_rate = float(df['is_attack'].mean()) if 'is_attack' in df else 0.0
-    host_service_div = float(df['service'].nunique() / n) if 'service' in df else 0.0
-    volume = float(np.log1p(pd.to_numeric(df.get('src_bytes', pd.Series([0])), errors='coerce').fillna(0).sum() +
-                            pd.to_numeric(df.get('dst_bytes', pd.Series([0])), errors='coerce').fillna(0).sum()))
+
+    vc = (
+        df['attack_category']
+        .value_counts(normalize=True)
+        if 'attack_category' in df
+        else pd.Series(dtype=float)
+    )
+
+    attack_rate = (
+        float(df['is_attack'].mean())
+        if 'is_attack' in df
+        else 0.0
+    )
+
+    host_service_div = (
+        float(df['service'].nunique() / n)
+        if 'service' in df
+        else 0.0
+    )
+
+    volume = float(
+        np.log1p(
+            pd.to_numeric(
+                df.get(
+                    'src_bytes',
+                    pd.Series(dtype=float)
+                ),
+                errors='coerce'
+            ).fillna(0).sum()
+            +
+            pd.to_numeric(
+                df.get(
+                    'dst_bytes',
+                    pd.Series(dtype=float)
+                ),
+                errors='coerce'
+            ).fillna(0).sum()
+        )
+    )
+
+    # Use normalized attack-category frequencies.
+    dos_rate = float(vc.get('dos', 0.0))
+    probe_rate = float(vc.get('probe', 0.0))
+    r2l_rate = float(vc.get('r2l', 0.0))
+    u2r_rate = float(vc.get('u2r', 0.0))
+
     vals = [
+
         attack_rate,
-        float(vc.get('dos', 0)), float(vc.get('probe', 0)),
-        float(vc.get('r2l', 0)), float(vc.get('u2r', 0)),
-        _safe_mean(df.get('src_bytes', pd.Series(dtype=float))),
-        _safe_mean(df.get('dst_bytes', pd.Series(dtype=float))),
-        _safe_mean(df.get('duration', pd.Series(dtype=float))),
-        _safe_mean(df.get('count', pd.Series(dtype=float))),
-        _safe_mean(df.get('srv_count', pd.Series(dtype=float))),
-        _safe_mean(df.get('serror_rate', pd.Series(dtype=float))),
-        _safe_mean(df.get('rerror_rate', pd.Series(dtype=float))),
-        _safe_mean(df.get('same_srv_rate', pd.Series(dtype=float))),
-        _safe_mean(df.get('diff_srv_rate', pd.Series(dtype=float))),
+
+        dos_rate,
+        probe_rate,
+        r2l_rate,
+        u2r_rate,
+
+        _safe_mean(
+            df.get(
+                'src_bytes',
+                pd.Series(dtype=float)
+            )
+        ),
+
+        _safe_mean(
+            df.get(
+                'dst_bytes',
+                pd.Series(dtype=float)
+            )
+        ),
+
+        _safe_mean(
+            df.get(
+                'duration',
+                pd.Series(dtype=float)
+            )
+        ),
+
+        _safe_mean(
+            df.get(
+                'count',
+                pd.Series(dtype=float)
+            )
+        ),
+
+        _safe_mean(
+            df.get(
+                'srv_count',
+                pd.Series(dtype=float)
+            )
+        ),
+
+        _safe_mean(
+            df.get(
+                'serror_rate',
+                pd.Series(dtype=float)
+            )
+        ),
+
+        _safe_mean(
+            df.get(
+                'rerror_rate',
+                pd.Series(dtype=float)
+            )
+        ),
+
+        _safe_mean(
+            df.get(
+                'same_srv_rate',
+                pd.Series(dtype=float)
+            )
+        ),
+
+        _safe_mean(
+            df.get(
+                'diff_srv_rate',
+                pd.Series(dtype=float)
+            )
+        ),
+
         host_service_div,
+
         volume,
     ]
-    return np.asarray(vals, dtype=np.float32)
+
+    return np.asarray(
+        vals,
+        dtype=np.float32
+    )
 
 
-def build_state_series(df: pd.DataFrame, window_size: int = 200) -> Tuple[np.ndarray, List[str]]:
-    states, labels = [], []
-    for start in range(0, len(df) - window_size + 1, window_size):
-        w = df.iloc[start:start+window_size]
-        states.append(state_from_window(w))
-        labels.append(w['attack_category'].mode().iloc[0] if len(w) else 'normal')
+def build_state_series(
+    df: pd.DataFrame,
+    window_size: int = 50
+) -> Tuple[np.ndarray, List[str]]:
+
+    states = []
+    labels = []
+
+    for start in range(0, len(df) - window_size + 1):
+
+        w = df.iloc[start:start + window_size]
+
+        states.append(
+            state_from_window(w)
+        )
+
+        # Label the window using the most security-relevant
+        # attack present, rather than majority voting.
+        counts = w['attack_category'].value_counts(normalize=True)
+
+        if len(counts) == 0:
+            label = 'normal'
+        else:
+            # Keep the dominant class when it is reasonably strong.
+            dominant = str(counts.index[0]).lower()
+            dominant_fraction = float(counts.iloc[0])
+
+            # Otherwise preserve minority attacks if they occupy
+            # a meaningful fraction of the window.
+            if dominant_fraction >= 0.50:
+                label = dominant
+            else:
+                attack_priority = ['u2r', 'r2l', 'probe', 'dos']
+
+                label = 'normal'
+
+                for attack in attack_priority:
+                    if float(counts.get(attack, 0.0)) >= 0.02:
+                        label = attack
+                        break
+
+        labels.append(label)
+
     return np.stack(states), labels
-
 
 def stage_for_label(label: str) -> str:
     return STAGE_MAP.get(label, 'Unknown')
+
+
 
 
 def stage_score(label_probs: Dict[str, float]) -> Tuple[str, float]:

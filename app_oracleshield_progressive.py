@@ -20,24 +20,263 @@ LEDGER_FILE = 'oracle_shield_ledger.json'
 st.set_page_config(page_title='OracleShield | Predictive Cyber Defence', page_icon='🛡️', layout='wide', initial_sidebar_state='expanded')
 
 # -------------------- STYLE --------------------
-st.markdown('''
+st.markdown("""
 <style>
-[data-testid="stAppViewContainer"] { background: #f5f7fb; }
-.block-container { max-width: 1450px; padding-top: 1.5rem; }
-.hero { background: linear-gradient(135deg,#0b1730,#12294d); color:white; padding:24px 28px; border-radius:16px; margin-bottom:18px; }
-.hero h1 { margin:0; font-size:34px; }
-.hero p { margin:6px 0 0; color:#b8c7dc; }
-.card { background:white; border:1px solid #e5eaf1; border-radius:14px; padding:18px; box-shadow:0 3px 14px rgba(15,23,42,.04); }
-.small { color:#64748b; font-size:13px; }
-.kpi { font-size:28px; font-weight:700; color:#0f172a; }
-.status-good { color:#047857; font-weight:700; }
-.status-warn { color:#b45309; font-weight:700; }
-.status-bad { color:#b91c1c; font-weight:700; }
+
+/* ---------- GLOBAL ---------- */
+
+[data-testid="stAppViewContainer"] {
+    background: #0b1120;
+}
+
+[data-testid="stHeader"] {
+    background: #0b1120;
+}
+
+.block-container {
+    max-width: 1500px;
+    padding-top: 1.5rem;
+    padding-bottom: 3rem;
+}
+
+/* ---------- MAIN CONTENT ---------- */
+
+.main .block-container {
+    color: #e5e7eb;
+}
+
+/* ---------- HERO ---------- */
+
+.hero {
+    background:
+        radial-gradient(circle at 85% 20%, rgba(56,189,248,.15), transparent 30%),
+        linear-gradient(135deg, #0f1f3d 0%, #111827 100%);
+
+    border: 1px solid rgba(96,165,250,.22);
+    color: #f8fafc;
+
+    padding: 26px 30px;
+    border-radius: 18px;
+
+    margin-bottom: 24px;
+
+    box-shadow:
+        0 10px 35px rgba(0,0,0,.25),
+        inset 0 1px 0 rgba(255,255,255,.04);
+}
+
+.hero h1 {
+    margin: 0;
+    font-size: 36px;
+    font-weight: 800;
+    letter-spacing: -0.5px;
+}
+
+.hero p {
+    margin: 8px 0 0;
+    color: #94a3b8;
+    font-size: 14px;
+}
+
+/* ---------- KPI METRICS ---------- */
+
+[data-testid="stMetric"] {
+    background: #111827;
+    border: 1px solid #1f2937;
+    border-radius: 14px;
+
+    padding: 18px 20px;
+
+    box-shadow:
+        0 6px 20px rgba(0,0,0,.18);
+}
+
+[data-testid="stMetricLabel"] {
+    color: #94a3b8 !important;
+    font-size: 13px !important;
+    font-weight: 600 !important;
+}
+
+[data-testid="stMetricValue"] {
+    color: #f8fafc !important;
+    font-size: 28px !important;
+    font-weight: 800 !important;
+}
+
+/* ---------- HEADINGS ---------- */
+
+h1, h2, h3 {
+    color: #f8fafc !important;
+}
+
+h4, h5, h6 {
+    color: #cbd5e1 !important;
+}
+
+p, label {
+    color: #cbd5e1;
+}
+
+/* ---------- CARDS ---------- */
+
+.card {
+    background: #111827;
+
+    border: 1px solid #1f2937;
+    border-radius: 14px;
+
+    padding: 18px;
+
+    box-shadow:
+        0 6px 20px rgba(0,0,0,.18);
+}
+
+.small {
+    color: #64748b;
+    font-size: 13px;
+}
+
+.kpi {
+    font-size: 28px;
+    font-weight: 800;
+    color: #f8fafc;
+}
+
+/* ---------- STATUS ---------- */
+
+.status-good {
+    color: #34d399;
+    font-weight: 700;
+}
+
+.status-warn {
+    color: #fbbf24;
+    font-weight: 700;
+}
+
+.status-bad {
+    color: #f87171;
+    font-weight: 700;
+}
+
+/* ---------- SIDEBAR ---------- */
+
+[data-testid="stSidebar"] {
+    background:
+        linear-gradient(
+            180deg,
+            #090d18 0%,
+            #111827 100%
+        );
+
+    border-right: 1px solid #1f2937;
+}
+
+[data-testid="stSidebar"] * {
+    color: #cbd5e1;
+}
+
+[data-testid="stSidebar"] h3 {
+    color: #f8fafc !important;
+}
+
+/* ---------- BUTTONS ---------- */
+
+.stButton > button {
+    width: 100%;
+
+    background: linear-gradient(
+        135deg,
+        #2563eb,
+        #1d4ed8
+    ) !important;
+
+    color: white !important;
+
+    border: 1px solid #3b82f6 !important;
+    border-radius: 10px !important;
+
+    padding: 11px 18px !important;
+
+    font-weight: 700 !important;
+
+    box-shadow:
+        0 6px 18px rgba(37,99,235,.25);
+}
+
+.stButton > button:hover {
+    background: linear-gradient(
+        135deg,
+        #3b82f6,
+        #2563eb
+    ) !important;
+
+    border-color: #60a5fa !important;
+}
+
+/* ---------- SLIDERS ---------- */
+
+[data-testid="stSlider"] label {
+    color: #cbd5e1 !important;
+    font-weight: 600 !important;
+}
+
+/* ---------- DATAFRAMES ---------- */
+
+[data-testid="stDataFrame"] {
+    border: 1px solid #1f2937;
+    border-radius: 12px;
+    overflow: hidden;
+}
+
+/* ---------- INFO / SUCCESS BOXES ---------- */
+
+[data-testid="stAlert"] {
+    border-radius: 12px;
+}
+
+/* ---------- RADIO BUTTONS ---------- */
+
+[data-testid="stRadio"] label {
+    color: #cbd5e1 !important;
+}
+
+/* ---------- DIVIDERS ---------- */
+
+hr {
+    border-color: #1f2937 !important;
+}
+
+/* ---------- PLOTLY AREA ---------- */
+
+.stPlotlyChart {
+    background: #111827;
+    border: 1px solid #1f2937;
+    border-radius: 14px;
+    padding: 8px;
+}
+
+/* ---------- SCROLLBAR ---------- */
+
+::-webkit-scrollbar {
+    width: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: #0b1120;
+}
+
+::-webkit-scrollbar-thumb {
+    background: #334155;
+    border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: #475569;
+}
+
 </style>
-''', unsafe_allow_html=True)
-
-st.markdown(f'''<div class="hero"><h1>🛡️ {APP_NAME}</h1><p>AI World Model for Predictive Network Defence · Detection → State Dynamics → Forward Simulation → Auditable Response</p></div>''', unsafe_allow_html=True)
-
+""", unsafe_allow_html=True)
 # -------------------- LOADERS --------------------
 @st.cache_data(show_spinner='Loading combined NSL-KDD workbook…')
 def load_data():
@@ -57,7 +296,11 @@ def load_world_model():
     import torch
     from oracle_shield_world_model import WorldModel
     ckpt=torch.load(WORLD_FILE,map_location='cpu')
-    model=WorldModel(ckpt['input_dim'],hidden=64,classes=len(ckpt['classes']))
+    model=WorldModel(
+    ckpt['input_dim'],
+    hidden=ckpt.get('hidden_dim', 96),
+    classes=len(ckpt['classes'])
+)
     model.load_state_dict(ckpt['model']); model.eval()
     return model, ckpt
 
@@ -149,77 +392,692 @@ if 'model_metrics' not in st.session_state:
         'report':classification_report(y,pred,labels=['dos','normal','probe','r2l','u2r'],output_dict=True,zero_division=0)
     }
 M=st.session_state.model_metrics
-
 # -------------------- COMMAND CENTER --------------------
-if page=='Command Center':
-    c1,c2,c3,c4,c5=st.columns(5)
-    c1.metric('Detection accuracy',f"{M['accuracy']:.2%}")
-    c2.metric('Macro F1',f"{M['macro_f1']:.2%}")
-    c3.metric('Macro recall',f"{M['macro_recall']:.2%}")
-    c4.metric('Train flows',f"{len(train):,}")
-    c5.metric('Test flows',f"{len(test):,}")
+if page == 'Command Center':
 
-    st.markdown('### Live threat-state simulation')
-    a,b,c=st.columns([1,1,1])
-    n=a.slider('Windows to replay',5,80,30)
-    records_per_window=b.select_slider('Flows / state window',[50,100,200,500],value=200)
-    speed=c.slider('Replay delay (seconds)',0.0,1.0,0.05,0.05)
+    # ==========================================================
+    # COMMAND CENTER HEADER
+    # ==========================================================
+    st.markdown(
+        """
+        <div class="hero">
+            <h1>🛡️ OracleShield Command Center</h1>
+            <p>
+                Predictive cyber defence console · Detect → Understand → Forecast → Audit
+            </p>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
 
-    if st.button('▶ Start progressive replay',type='primary',use_container_width=True):
-        sample=test.sample(n=min(n*records_per_window,len(test)),random_state=None).reset_index(drop=True)
-        chart=st.empty(); status=st.empty(); table=st.empty(); forecast_box=st.empty()
-        states=[]; rates=[]; events=[]
-        mem=st.session_state.adaptive_memory
+    # ==========================================================
+    # TOP PERFORMANCE KPIs
+    # ==========================================================
+    st.markdown("### Detection performance")
+
+    k1, k2, k3, k4, k5 = st.columns(5)
+
+    k1.metric(
+        "Detection Accuracy",
+        f"{M['accuracy']:.1%}"
+    )
+
+    k2.metric(
+        "Macro F1",
+        f"{M['macro_f1']:.1%}"
+    )
+
+    k3.metric(
+        "Macro Recall",
+        f"{M['macro_recall']:.1%}"
+    )
+
+    k4.metric(
+        "Training Flows",
+        f"{len(train):,}"
+    )
+
+    k5.metric(
+        "Evaluation Flows",
+        f"{len(test):,}"
+    )
+
+    st.markdown("---")
+
+    # ==========================================================
+    # LIVE DEFENCE STATUS
+    # ==========================================================
+    st.markdown("### Live defence status")
+
+    s1, s2, s3, s4 = st.columns(4)
+
+    # Initial values before replay
+    current_risk = "STANDBY"
+    current_stage = "Awaiting telemetry"
+    current_probability = 0.0
+    current_confidence = 0.0
+
+    s1.markdown(
+        f"""
+        <div class="card">
+            <div class="small">SYSTEM STATUS</div>
+            <div class="kpi">● READY</div>
+            <div class="small">Detector + World Model online</div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+    s2.markdown(
+        f"""
+        <div class="card">
+            <div class="small">CURRENT THREAT</div>
+            <div class="kpi">{current_risk}</div>
+            <div class="small">Updated during replay</div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+    s3.markdown(
+        f"""
+        <div class="card">
+            <div class="small">PREDICTED STAGE</div>
+            <div class="kpi" style="font-size:20px">
+                {current_stage}
+            </div>
+            <div class="small">World Model inference</div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+    s4.markdown(
+        f"""
+        <div class="card">
+            <div class="small">FUTURE RISK</div>
+            <div class="kpi">{current_probability:.0%}</div>
+            <div class="small">Probability of attack progression</div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+    st.markdown("")
+
+    # ==========================================================
+    # REPLAY CONTROLS
+    # ==========================================================
+    st.markdown("### 🎛️ Telemetry replay")
+
+    c1, c2, c3 = st.columns([1, 1, 1])
+
+    with c1:
+        n = st.slider(
+            "Windows to replay",
+            min_value=5,
+            max_value=80,
+            value=30
+        )
+
+    with c2:
+        records_per_window = st.select_slider(
+            "Flows per state window",
+            options=[50, 100, 200, 500],
+            value=200
+        )
+
+    with c3:
+        speed = st.slider(
+            "Replay delay",
+            min_value=0.0,
+            max_value=1.0,
+            value=0.05,
+            step=0.05
+        )
+
+    start_replay = st.button(
+        "▶  START LIVE THREAT SIMULATION",
+        type="primary",
+        use_container_width=True
+    )
+
+    # ==========================================================
+    # LIVE SIMULATION AREA
+    # ==========================================================
+    if start_replay:
+
+        sample = test.sample(
+            n=min(n * records_per_window, len(test)),
+            random_state=None
+        ).reset_index(drop=True)
+
+        # Dedicated UI containers
+        status = st.empty()
+
+        metric_row = st.empty()
+
+        chart = st.empty()
+
+        timeline = st.empty()
+
+        events_box = st.empty()
+
+        states = []
+        rates = []
+        events = []
+
+        mem = st.session_state.adaptive_memory
+
         for k in range(n):
-            w=sample.iloc[k*records_per_window:(k+1)*records_per_window]
-            if len(w)<10: break
-            X=make_X(w); probs=clf.predict_proba(X) if hasattr(clf,'predict_proba') else None; pred=clf.predict(X)
-            attack_rate=float(np.mean(pred!='normal'))
-            counts=pd.Series(pred).value_counts(normalize=True)
-            state=state_from_window(w.assign(attack_category=pred,is_attack=(pred!='normal').astype(int)))
-            states.append(state); rates.append(attack_rate)
-            dominant=pd.Series(pred).value_counts().idxmax()
-            stage=stage_for_label(dominant)
-            novelty,drift=mem.update(state,stage)
-            prev_stage = st.session_state.get('last_stage')
-            persistent_novelty = st.session_state.persistent_memory.update(state,stage,prev_stage)
-            st.session_state.last_stage = stage
-            memory_similarity,memory_stage = st.session_state.persistent_memory.similarity_to_memory(state)
-            base=float(np.clip(attack_rate,0,1))
-            progression=mem.progression_probability(base)
-            if memory_stage and memory_stage != 'Benign / No active stage':
-                progression=float(np.clip(progression + 0.08*memory_similarity,0,0.99))
-            if world_model is not None and len(states)>=world_ckpt['sequence_length']:
-                import torch
-                seq=np.stack(states[-world_ckpt['sequence_length']:])
-                seq=(seq-np.asarray(world_ckpt['scaler_mean']))/(np.asarray(world_ckpt['scaler_scale'])+1e-8)
-                with torch.no_grad():
-                    ns,logits,_=world_model(torch.tensor(seq,dtype=torch.float32).unsqueeze(0))
-                    stage_probs=torch.softmax(logits,dim=1).numpy()[0]
-                world_stage=world_ckpt['classes'][int(stage_probs.argmax())]
-                world_conf=float(stage_probs.max())
-                stage=stage_for_label(world_stage)
-                progression=float(np.clip(0.55*progression+0.45*stage_probs[1:].sum(),0,0.99))
-            else:
-                world_conf=None
-            risk='CRITICAL' if progression>=0.80 else ('HIGH' if progression>=0.60 else ('ELEVATED' if progression>=0.35 else 'LOW'))
-            event={'source':'progressive_replay','window':k,'dominant_attack':dominant,'stage':stage,'attack_rate':attack_rate,'progression_probability':progression,'novelty':novelty,'drift':drift}
-            if dominant!='normal':
-                block=AuditChain(LEDGER_FILE).append(event)
-                events.append({**event,'block':block['index'],'hash':block['hash'][:16]+'…'})
-            status.markdown(f"**Threat state:** `{risk}` &nbsp; | &nbsp; **Infiltration probability (next windows):** `{progression:.1%}` &nbsp; | &nbsp; **Predicted stage:** `{stage}` &nbsp; | &nbsp; **Novelty:** `{novelty:.3f}` &nbsp; | &nbsp; **Drift:** `{drift:.3f}` &nbsp; | &nbsp; **Memory match:** `{memory_similarity:.1%}`")
-            table.dataframe(pd.DataFrame(events[-8:]),use_container_width=True)
-            fig=go.Figure(); fig.add_trace(go.Scatter(y=rates,mode='lines+markers',name='Observed attack pressure'))
-            if len(rates)>=3:
-                # Simple adaptive forward estimate from EWMA; the neural world model is shown separately when available.
-                ema=pd.Series(rates).ewm(span=min(8,len(rates)),adjust=False).mean().iloc[-1]
-                future=[ema]*(5)
-                fig.add_trace(go.Scatter(x=list(range(len(rates),len(rates)+5)),y=future,mode='lines+markers',name='Adaptive forecast'))
-            fig.update_layout(height=360,margin=dict(l=10,r=10,t=30,b=10),yaxis_title='Attack pressure',xaxis_title='State window',yaxis_range=[0,1])
-            chart.plotly_chart(fig,use_container_width=True)
-            time.sleep(speed)
-        st.success('Progressive replay completed. Security events were appended to the tamper-evident audit ledger.')
 
+            w = sample.iloc[
+                k * records_per_window:
+                (k + 1) * records_per_window
+            ]
+
+            if len(w) < 10:
+                break
+
+            # --------------------------------------------------
+            # CLASSIFIER INFERENCE
+            # --------------------------------------------------
+            X = make_X(w)
+
+            if hasattr(clf, "predict_proba"):
+                probs = clf.predict_proba(X)
+            else:
+                probs = None
+
+            pred = clf.predict(X)
+
+            attack_rate = float(
+                np.mean(pred != "normal")
+            )
+
+            state = state_from_window(
+                w.assign(
+                    attack_category=pred,
+                    is_attack=(pred != "normal").astype(int)
+                )
+            )
+
+            states.append(state)
+            rates.append(attack_rate)
+
+            # --------------------------------------------------
+            # CURRENT DOMINANT THREAT
+            # --------------------------------------------------
+            prediction_counts = pd.Series(pred).value_counts()
+
+            dominant = str(
+                prediction_counts.idxmax()
+            )
+
+            stage = stage_for_label(dominant)
+
+            # --------------------------------------------------
+            # ADAPTIVE MEMORY
+            # --------------------------------------------------
+            novelty, drift = mem.update(
+                state,
+                stage
+            )
+
+            prev_stage = st.session_state.get(
+                "last_stage"
+            )
+
+            persistent_novelty = (
+                st.session_state
+                .persistent_memory
+                .update(
+                    state,
+                    stage,
+                    prev_stage
+                )
+            )
+
+            st.session_state.last_stage = stage
+
+            memory_similarity, memory_stage = (
+                st.session_state
+                .persistent_memory
+                .similarity_to_memory(state)
+            )
+
+            # --------------------------------------------------
+            # BASE PROGRESSION RISK
+            # --------------------------------------------------
+            base = float(
+                np.clip(
+                    attack_rate,
+                    0,
+                    1
+                )
+            )
+
+            progression = (
+                mem.progression_probability(
+                    base
+                )
+            )
+
+            if (
+                memory_stage
+                and memory_stage !=
+                "Benign / No active stage"
+            ):
+                progression = float(
+                    np.clip(
+                        progression +
+                        0.08 *
+                        memory_similarity,
+                        0,
+                        0.99
+                    )
+                )
+
+            # --------------------------------------------------
+            # NEURAL WORLD MODEL
+            # --------------------------------------------------
+            world_conf = None
+            world_stage = None
+
+            if (
+                world_model is not None
+                and len(states) >=
+                world_ckpt["sequence_length"]
+            ):
+
+                import torch
+
+                seq = np.stack(
+                    states[
+                        -world_ckpt[
+                            "sequence_length"
+                        ]:
+                    ]
+                )
+
+                seq = (
+                    seq -
+                    np.asarray(
+                        world_ckpt[
+                            "scaler_mean"
+                        ]
+                    )
+                ) / (
+                    np.asarray(
+                        world_ckpt[
+                            "scaler_scale"
+                        ]
+                    ) + 1e-8
+                )
+
+                with torch.no_grad():
+
+                    ns, logits, _ = (
+                        world_model(
+                            torch.tensor(
+                                seq,
+                                dtype=torch.float32
+                            ).unsqueeze(0)
+                        )
+                    )
+
+                    stage_probs = (
+                        torch.softmax(
+                            logits,
+                            dim=1
+                        )
+                        .numpy()[0]
+                    )
+
+                world_stage = (
+                    world_ckpt["classes"][
+                        int(
+                            stage_probs.argmax()
+                        )
+                    ]
+                )
+
+                world_conf = float(
+                    stage_probs.max()
+                )
+
+                stage = stage_for_label(
+                    world_stage
+                )
+
+                progression = float(
+                    np.clip(
+                        0.55 * progression +
+                        0.45 *
+                        stage_probs[1:].sum(),
+                        0,
+                        0.99
+                    )
+                )
+
+            # --------------------------------------------------
+            # RISK LEVEL
+            # --------------------------------------------------
+            risk = (
+                "CRITICAL"
+                if progression >= 0.80
+                else
+                "HIGH"
+                if progression >= 0.60
+                else
+                "ELEVATED"
+                if progression >= 0.35
+                else
+                "LOW"
+            )
+
+            # --------------------------------------------------
+            # AUDIT EVENT
+            # --------------------------------------------------
+            event = {
+                "source":
+                    "progressive_replay",
+
+                "window":
+                    k,
+
+                "dominant_attack":
+                    dominant,
+
+                "stage":
+                    stage,
+
+                "attack_rate":
+                    attack_rate,
+
+                "progression_probability":
+                    progression,
+
+                "novelty":
+                    novelty,
+
+                "drift":
+                    drift
+            }
+
+            # Record every replay window in the tamper-evident audit ledger.
+            block = (
+                AuditChain(
+                    LEDGER_FILE
+                ).append(event)
+            )
+
+            events.append(
+                {
+                    **event,
+                    "block":
+                        block["index"],
+                    "hash":
+                        block["hash"][:16] +
+                        "…"
+                }
+            )
+
+            # ==================================================
+            # LIVE STATUS PANEL
+            # ==================================================
+            status.markdown(
+                f"""
+                <div class="card">
+                    <div style="
+                        display:flex;
+                        justify-content:space-between;
+                        align-items:center;
+                    ">
+                        <div>
+                            <div class="small">
+                                LIVE THREAT STATE · WINDOW {k + 1}
+                            </div>
+
+                            <div style="
+                                font-size:30px;
+                                font-weight:800;
+                                margin-top:5px;
+                            ">
+                                {risk}
+                            </div>
+
+                            <div class="small">
+                                Dominant detection:
+                                <b>{dominant.upper()}</b>
+                                &nbsp; · &nbsp;
+                                Stage:
+                                <b>{stage}</b>
+                            </div>
+                        </div>
+
+                        <div style="
+                            text-align:right;
+                        ">
+                            <div class="small">
+                                NEXT-WINDOW RISK
+                            </div>
+
+                            <div style="
+                                font-size:38px;
+                                font-weight:800;
+                            ">
+                                {progression:.1%}
+                            </div>
+
+                            <div class="small">
+                                World Model confidence:
+                                {
+                                    f"{world_conf:.1%}"
+                                    if world_conf is not None
+                                    else "warming up"
+                                }
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
+
+            # ==================================================
+            # LIVE METRICS
+            # ==================================================
+            with metric_row.container():
+
+                m1, m2, m3, m4, m5 = st.columns(5)
+
+                m1.metric(
+                    "Attack pressure",
+                    f"{attack_rate:.1%}"
+                )
+
+                m2.metric(
+                    "Prediction",
+                    dominant.upper()
+                )
+
+                m3.metric(
+                    "World confidence",
+                    (
+                        f"{world_conf:.1%}"
+                        if world_conf is not None
+                        else "—"
+                    )
+                )
+
+                m4.metric(
+                    "Novelty",
+                    f"{novelty:.3f}"
+                )
+
+                m5.metric(
+                    "Drift",
+                    f"{drift:.3f}"
+                )
+
+            # ==================================================
+            # THREAT PRESSURE CHART
+            # ==================================================
+            fig = go.Figure()
+
+            fig.add_trace(
+                go.Scatter(
+                    x=list(
+                        range(len(rates))
+                    ),
+                    y=rates,
+                    mode="lines+markers",
+                    name="Observed attack pressure",
+                    line=dict(width=3)
+                )
+            )
+
+            if len(rates) >= 3:
+
+                ema = (
+                    pd.Series(rates)
+                    .ewm(
+                        span=min(
+                            8,
+                            len(rates)
+                        ),
+                        adjust=False
+                    )
+                    .mean()
+                    .iloc[-1]
+                )
+
+                future_x = list(
+                    range(
+                        len(rates),
+                        len(rates) + 5
+                    )
+                )
+
+                future_y = [ema] * 5
+
+                fig.add_trace(
+                    go.Scatter(
+                        x=future_x,
+                        y=future_y,
+                        mode="lines+markers",
+                        name="Adaptive forecast",
+                        line=dict(
+                            dash="dash",
+                            width=2
+                        )
+                    )
+                )
+
+            if world_conf is not None:
+
+                fig.add_trace(
+                    go.Scatter(
+                        x=[len(rates) - 1],
+                        y=[world_conf],
+                        mode="markers",
+                        name="World Model confidence",
+                        marker=dict(
+                            size=13
+                        )
+                    )
+                )
+
+            fig.update_layout(
+                height=390,
+                margin=dict(
+                    l=10,
+                    r=10,
+                    t=55,
+                    b=10
+                ),
+                title={
+                    "text":
+                        "Threat Pressure & Predictive Forecast",
+                    "x": 0.02
+                },
+                xaxis_title="Telemetry window",
+                yaxis_title="Probability / pressure",
+                yaxis=dict(
+                    range=[0, 1]
+                ),
+                hovermode="x unified",
+                legend=dict(
+                    orientation="h",
+                    yanchor="bottom",
+                    y=1.02,
+                    xanchor="left",
+                    x=0
+                )
+            )
+
+            chart.plotly_chart(
+                fig,
+                use_container_width=True
+            )
+
+            # ==================================================
+            # SECURITY TIMELINE
+            # ==================================================
+            timeline.markdown(
+                f"""
+                ### Security timeline
+
+                **Window {k + 1}**
+
+                `DETECT`
+                → **{dominant.upper()}**
+
+                → `CLASSIFY`
+
+                → **{stage}**
+
+                → `FORECAST`
+
+                → **{progression:.1%}**
+
+                → `AUDIT`
+
+                → **{
+                    "BLOCK COMMITTED"
+                    if dominant != "normal"
+                    else "NO SECURITY EVENT"
+                }**
+                """
+            )
+
+            # ==================================================
+            # AUDIT EVENTS
+            # ==================================================
+            if events:
+
+                events_box.dataframe(
+                    pd.DataFrame(
+                        events[-8:]
+                    ),
+                    use_container_width=True,
+                    hide_index=True
+                )
+            else:
+
+                events_box.info(
+                    "No malicious security events "
+                    "have been committed to the audit ledger yet."
+                )
+
+            time.sleep(speed)
+
+        st.success(
+            "Progressive replay completed. "
+            "Security events were appended to the "
+            "tamper-evident audit ledger."
+        )
 # -------------------- WORLD MODEL --------------------
 elif page=='World Model':
     st.markdown('### Learned network-state dynamics')
