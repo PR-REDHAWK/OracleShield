@@ -1,4 +1,4 @@
-import os, json, time, hashlib
+import os, json, time, hashlib ,copy
 from datetime import datetime
 import joblib
 import numpy as np
@@ -7,6 +7,7 @@ import streamlit as st
 import plotly.graph_objects as go
 
 from oracle_shield_world_model import AuditChain, PersistentThreatMemory, state_from_window, STATE_NAMES, stage_for_label, hash_event
+from live_detector import LiveFlowDetector
 
 # -------------------- CONFIG --------------------
 APP_NAME = 'OracleShield'
@@ -504,6 +505,235 @@ if page == 'Command Center':
     )
 
     st.markdown("")
+# ==========================================================
+# REAL LIVE NETWORK CAPTURE
+# ==========================================================
+st.markdown("### 🌐 Real-time network defence")
+
+lc1, lc2 = st.columns([2, 1])
+
+with lc1:
+    live_interface = st.text_input(
+        "Network interface",
+        value="wlan0"
+    )
+
+with lc2:
+    live_duration = st.slider(
+        "Capture duration (seconds)",
+        min_value=10,
+        max_value=120,
+        value=30,
+        step=10
+    )
+
+live_start = st.button(
+    "🟢 START REAL LIVE CAPTURE",
+    type="primary",
+    use_container_width=True
+)
+
+if live_start:
+
+    try:
+        detector = LiveFlowDetector(
+            live_interface,
+            window_seconds=5
+        )
+
+        st.session_state.live_detector = detector
+
+        status_live = st.empty()
+        metrics_live = st.empty()
+        table_live = st.empty()
+
+        status_live.info(
+            f"🟢 Capturing real traffic on "
+            f"`{live_interface}`..."
+        )
+
+        detector.start()
+
+        start_time = time.time()
+
+        while time.time() - start_time < live_duration:
+
+            elapsed = int(
+                time.time() - start_time
+            )
+
+            remaining = max(
+                0,
+                live_duration - elapsed
+            )
+
+            snap = detector.snapshot()
+
+            metrics_live.metric(
+                "Packets captured",
+                f"{snap['packets']:,}",
+                f"{remaining}s remaining"
+            )
+
+            time.sleep(1)
+
+        detector.stop()
+
+        status_live.success(
+            "✅ Live capture completed"
+        )
+
+        snap = detector.snapshot()
+
+        m1, m2, m3 = st.columns(3)
+
+        m1.metric(
+            "Packets",
+            f"{snap['packets']:,}"
+        )
+
+        m2.metric(
+            "Bytes",
+            f"{snap['bytes']:,}"
+        )
+
+        m3.metric(
+            "Completed flows",
+            f"{snap['completed_flows']:,}"
+        )
+
+        flows = detector.get_recent_flows()
+
+        if not flows.empty:
+
+            # ==============================================
+            # CLASSIFIER
+            # ==============================================
+
+            X_live = make_X(flows)
+
+            predictions = clf.predict(X_live)
+
+            attack_rate = float(
+                np.mean(
+                    predictions != "normal"
+                )
+            )
+
+            counts = pd.Series(
+                predictions
+            ).value_counts()
+
+            dominant = str(
+                counts.idxmax()
+            )
+
+            stage = stage_for_label(
+                dominant
+            )
+
+            # ==============================================
+            # LIVE WORLD STATE
+            # ==============================================
+
+            live_state = state_from_window(
+                flows.assign(
+                    attack_category=predictions,
+                    is_attack=(
+                        predictions != "normal"
+                    ).astype(int)
+                )
+            )
+
+            novelty, drift = (
+                st.session_state
+                .adaptive_memory
+                .update(
+                    live_state,
+                    stage
+                )
+            )
+
+            progression = (
+                st.session_state
+                .adaptive_memory
+                .progression_probability(
+                    attack_rate
+                )
+            )
+
+            risk = (
+                "CRITICAL"
+                if progression >= 0.80
+                else
+                "HIGH"
+                if progression >= 0.60
+                else
+                "ELEVATED"
+                if progression >= 0.35
+                else
+                "LOW"
+            )
+
+            st.markdown(
+                "#### 🛡️ Live threat assessment"
+            )
+
+            r1, r2, r3, r4 = st.columns(4)
+
+            r1.metric(
+                "Threat",
+                risk
+            )
+
+            r2.metric(
+                "Attack pressure",
+                f"{attack_rate:.1%}"
+            )
+
+            r3.metric(
+                "Classification",
+                dominant
+            )
+
+            r4.metric(
+                "Progression risk",
+                f"{progression:.1%}"
+            )
+
+            st.caption(
+                f"Stage: {stage} · "
+                f"Novelty: {novelty:.3f} · "
+                f"Drift: {drift:.3f}"
+            )
+
+            # ==============================================
+            # LIVE FLOWS
+            # ==============================================
+
+            display = flows.copy()
+
+            display["prediction"] = predictions
+
+            table_live.dataframe(
+                display,
+                use_container_width=True,
+                height=400
+            )
+
+        else:
+
+            st.warning(
+                "No completed flows were captured."
+            )
+
+    except Exception as e:
+
+        st.error(
+            f"Live capture failed: "
+            f"{type(e).__name__}: {e}"
+        )
+
 
     # ==========================================================
     # REPLAY CONTROLS
@@ -1117,15 +1347,61 @@ elif page=='Blockchain Audit':
         ev=b['event']; rows.append({'#':b['index'],'Time':datetime.fromtimestamp(b['timestamp']).strftime('%Y-%m-%d %H:%M:%S'),'Stage':ev.get('stage',ev.get('type','-')),'Attack':ev.get('dominant_attack','-'),'Risk':ev.get('progression_probability','-'),'Previous':b['previous_hash'][:12]+'…','Hash':b['hash'][:12]+'…'})
     st.dataframe(pd.DataFrame(rows),use_container_width=True)
     st.markdown('#### Judge-ready tamper demonstration')
-    if st.button('🧪 Simulate tampering',use_container_width=True):
-        demo=json.loads(json.dumps(chain.blocks))
-        if len(demo)>1:
-            demo[-1]['event']['dominant_attack']='tampered'
-            ok,bi,why=chain.verify(demo)
-            st.error(f'TAMPER DETECTED · valid={ok} · broken block={bi} · {why}')
-        else: st.info('Add at least one security event first.')
-    st.caption('This prototype uses a local permissioned-style hash chain for audit integrity. It is not a public cryptocurrency network or a multi-node consensus blockchain.')
 
+    if st.button('🧪 Simulate Tampering (Isolated)', use_container_width=True):
+
+        # Load the REAL ledger.
+        chain = AuditChain(LEDGER_FILE)
+
+        # Create an isolated copy.
+        # The real oracle_shield_ledger.json is NEVER modified.
+        tampered_demo = json.loads(
+            json.dumps(chain.blocks)
+        )
+
+        # Record the original value.
+        last_block = tampered_demo[-1]
+        original_attack = last_block['event'].get(
+            'dominant_attack',
+            '-'
+        )
+
+        # Intentionally modify ONLY the isolated copy.
+        last_block['event']['dominant_attack'] = 'tampered'
+
+        # Verify ONLY the modified copy.
+        valid_demo, broken_block, reason = chain.verify(
+            tampered_demo
+        )
+
+        if not valid_demo:
+
+            st.error(
+                f"⚠️ SIMULATED TAMPERING DETECTED · "
+                f"broken block={broken_block} · "
+                f"{reason}"
+            )
+
+            st.info(
+                f"Field modified: dominant_attack  |  "
+                f"Original: {original_attack}  →  "
+                f"Simulated: tampered"
+            )
+
+            st.success(
+                "✓ Real audit ledger remains unchanged and intact."
+            )
+
+            st.caption(
+                "The system detected the modification because the "
+                "event changed but the stored SHA-256 content hash "
+                "was not changed."
+            )
+
+        else:
+            st.success(
+                "No tampering detected."
+            )
 # -------------------- EVIDENCE --------------------
 else:
     st.markdown('### Evidence, metrics & data coverage')
