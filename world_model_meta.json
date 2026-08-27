@@ -1,0 +1,57 @@
+{
+  "metrics": {
+    "stage_accuracy": 0.9109263129808334,
+    "stage_macro_f1": 0.6696023380747256,
+    "stage_macro_precision": 0.7396200833282632,
+    "stage_macro_recall": 0.6347624530205402,
+    "next_state_mae_standardized": 0.46640902757644653,
+    "window_size": 50,
+    "sequence_length": 8,
+    "train_sequences": 125916,
+    "test_sequences": 22487,
+    "temporal_note": "NSL-KDD has no timestamps; row order is used only as a reproducible prototype sequence."
+  },
+  "classes": [
+    "normal",
+    "probe",
+    "r2l",
+    "u2r",
+    "dos"
+  ],
+  "state_names": [
+    "attack_rate",
+    "dos_rate",
+    "probe_rate",
+    "r2l_rate",
+    "u2r_rate",
+    "mean_src_bytes",
+    "mean_dst_bytes",
+    "mean_duration",
+    "mean_count",
+    "mean_srv_count",
+    "mean_serror_rate",
+    "mean_rerror_rate",
+    "mean_same_srv_rate",
+    "mean_diff_srv_rate",
+    "host_service_diversity",
+    "traffic_volume_log"
+  ],
+  "window_size": 50,
+  "sequence_length": 8,
+  "data": "Copy of DOC-20260825-WA0002.xlsx",
+  "class_counts": {
+    "normal": 92196,
+    "probe": 17446,
+    "r2l": 11464,
+    "u2r": 565,
+    "dos": 4245
+  },
+  "class_weights": {
+    "normal": 0.5,
+    "probe": 0.5,
+    "r2l": 0.6016073960124332,
+    "u2r": 2.7099235025784125,
+    "dos": 0.98864962992677
+  },
+  "temporal_note": "NSL-KDD has no timestamps; row order is used only as a reproducible prototype sequence."
+}
