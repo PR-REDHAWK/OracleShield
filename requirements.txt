@@ -8,3 +8,4 @@ matplotlib
 plotly
 torch
 shap
+scapy
