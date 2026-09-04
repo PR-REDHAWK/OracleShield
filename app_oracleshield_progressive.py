@@ -8,6 +8,7 @@ import plotly.graph_objects as go
 
 from oracle_shield_world_model import AuditChain, PersistentThreatMemory, state_from_window, STATE_NAMES, stage_for_label, hash_event
 from oracle_shield_blockchain import PermissionedBlockchain, SOCNode, Block, Transaction, MerkleTree
+from flow_extractor import PacketRecord, FlowTracker, FlowStateEncoder, LivePacketStreamGenerator
 from live_detector import LiveFlowDetector
 
 # -------------------- CONFIG --------------------
