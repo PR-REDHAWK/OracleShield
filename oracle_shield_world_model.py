@@ -1,7 +1,7 @@
-import os, json, hashlib, time
+import os, json, hashlib, time, math
 from dataclasses import dataclass
 from datetime import datetime
-from typing import List, Dict, Tuple
+from typing import List, Dict, Tuple, Any
 
 import numpy as np
 import pandas as pd
@@ -10,7 +10,21 @@ try:
     import torch
     from torch import nn
 
+    class PositionalEncoding(nn.Module):
+        def __init__(self, d_model: int, max_len: int = 500):
+            super().__init__()
+            pe = torch.zeros(max_len, d_model)
+            position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)
+            div_term = torch.exp(torch.arange(0, d_model, 2).float() * (-math.log(10000.0) / d_model))
+            pe[:, 0::2] = torch.sin(position * div_term)
+            pe[:, 1::2] = torch.cos(position * div_term)
+            self.register_buffer('pe', pe.unsqueeze(0))
+
+        def forward(self, x: torch.Tensor) -> torch.Tensor:
+            return x + self.pe[:, :x.size(1)]
+
     class WorldModel(nn.Module):
+        """LSTM-based Temporal World Model for network state transitions."""
         def __init__(self, d_in, hidden=64, classes=5):
             super().__init__()
 
@@ -39,8 +53,101 @@ try:
             z = h[:, -1]
             return self.next_state(z), self.stage(z), z
 
+    class TransformerWorldModel(nn.Module):
+        """Multi-Head Self-Attention Transformer World Model for complex long-range temporal state modeling."""
+        def __init__(self, d_in, d_model=64, nhead=4, num_layers=2, classes=5):
+            super().__init__()
+
+            self.input_proj = nn.Linear(d_in, d_model)
+            self.pos_encoder = PositionalEncoding(d_model)
+
+            encoder_layer = nn.TransformerEncoderLayer(
+                d_model=d_model,
+                nhead=nhead,
+                dim_feedforward=128,
+                dropout=0.1,
+                batch_first=True
+            )
+            self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
+
+            self.next_state = nn.Sequential(
+                nn.Linear(d_model, 64),
+                nn.ReLU(),
+                nn.Linear(64, d_in)
+            )
+
+            self.stage = nn.Sequential(
+                nn.Linear(d_model, 64),
+                nn.ReLU(),
+                nn.Dropout(0.2),
+                nn.Linear(64, classes)
+            )
+
+        def forward(self, x):
+            # x shape: (batch, seq_len, d_in)
+            h = self.input_proj(x)
+            h = self.pos_encoder(h)
+            out = self.transformer(h)
+            z = out[:, -1]  # Representation at last sequence position
+            return self.next_state(z), self.stage(z), z
+
+    class MultiStepRolloutEngine:
+        """Autoregressive multi-step forward state rollout engine (t+1 ... t+K)."""
+        CLASSES = ['normal', 'probe', 'r2l', 'u2r', 'dos']
+
+        @classmethod
+        def predict_rollout(cls, model: nn.Module, initial_sequence: np.ndarray, horizon: int = 5) -> List[Dict[str, Any]]:
+            """Performs autoregressive rollout for K steps into the future.
+            
+            Args:
+                model: PyTorch WorldModel or TransformerWorldModel
+                initial_sequence: numpy array of shape (seq_len, d_in)
+                horizon: Number of future steps K (default 5)
+            
+            Returns:
+                List of dicts containing projected_state, stage_probabilities, predicted_stage, and risk.
+            """
+            model.eval()
+            current_seq = torch.tensor(initial_sequence, dtype=torch.float32).unsqueeze(0)  # (1, seq_len, d_in)
+            results = []
+
+            with torch.no_grad():
+                for k in range(1, horizon + 1):
+                    next_s_logits, stage_logits, _ = model(current_seq)
+
+                    next_s = next_s_logits[0].cpu().numpy()
+                    probs = torch.softmax(stage_logits[0], dim=-1).cpu().numpy()
+
+                    stage_probs = {cls_name: float(probs[i]) for i, cls_name in enumerate(cls.CLASSES)}
+                    top_idx = int(np.argmax(probs))
+                    pred_label = cls.CLASSES[top_idx]
+                    pred_stage = STAGE_MAP.get(pred_label, 'Unknown')
+
+                    # Cumulative risk score = projected attack rate * max attack stage probability
+                    proj_attack_rate = float(np.clip(next_s[0], 0.0, 1.0))
+                    top_prob = float(probs[top_idx])
+                    cumulative_risk = proj_attack_rate * (1.0 - stage_probs.get('normal', 0.0))
+
+                    results.append({
+                        'step': k,
+                        'projected_state': next_s,
+                        'stage_probabilities': stage_probs,
+                        'predicted_stage': pred_stage,
+                        'predicted_label': pred_label,
+                        'confidence': top_prob,
+                        'cumulative_risk': float(cumulative_risk)
+                    })
+
+                    # Update autoregressive sequence: drop oldest frame, append predicted next_s
+                    next_s_tensor = torch.tensor(next_s, dtype=torch.float32).unsqueeze(0).unsqueeze(1) # (1, 1, d_in)
+                    current_seq = torch.cat([current_seq[:, 1:, :], next_s_tensor], dim=1)
+
+            return results
+
 except Exception:
     WorldModel = None
+    TransformerWorldModel = None
+    MultiStepRolloutEngine = None
 
 STAGE_MAP = {
     'normal': 'Benign / No active stage',
