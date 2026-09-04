@@ -22,6 +22,7 @@ env/
 
 # Runtime state
 oracle_shield_ledger.json
+oracle_shield_blockchain.json
 oracle_shield_memory.json
 world_model_meta.json
 
