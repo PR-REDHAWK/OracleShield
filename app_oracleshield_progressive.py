@@ -6,7 +6,7 @@ import pandas as pd
 import streamlit as st
 import plotly.graph_objects as go
 
-from oracle_shield_world_model import AuditChain, PersistentThreatMemory, state_from_window, STATE_NAMES, stage_for_label, hash_event
+from oracle_shield_world_model import AuditChain, PersistentThreatMemory, state_from_window, STATE_NAMES, stage_for_label, hash_event, TransformerWorldModel, MultiStepRolloutEngine
 from oracle_shield_blockchain import PermissionedBlockchain, SOCNode, Block, Transaction, MerkleTree
 from flow_extractor import PacketRecord, FlowTracker, FlowStateEncoder, LivePacketStreamGenerator
 from live_detector import LiveFlowDetector
@@ -1318,12 +1318,22 @@ if live_start:
         )
 # -------------------- WORLD MODEL --------------------
 elif page=='World Model':
-    st.markdown('### Learned network-state dynamics')
-    if world_model is None:
+    st.markdown('### 🧠 Learned Network-State Dynamics & Multi-Step World Model')
+    
+    col_arch, col_info = st.columns([1, 2])
+    with col_arch:
+        arch_type = st.radio("Model Architecture", ["PyTorch LSTM World Model", "PyTorch Transformer World Model (Self-Attention)"])
+    with col_info:
+        if "Transformer" in arch_type:
+            st.info("⚡ **Transformer World Model Active**: Uses 2-layer Multi-Head Self-Attention (`nhead=4`) with Positional Encoding to model complex long-range temporal dependencies across network state windows.")
+            selected_model = TransformerWorldModel(16) if 'TransformerWorldModel' in globals() and TransformerWorldModel else world_model
+        else:
+            st.info(r"🧠 **LSTM World Model Active**: Uses sequential LSTM state transitions $P(S_{t+1} | S_t, \dots, S_{t-k})$ for temporal next-state regression and attack stage forecasting.")
+            selected_model = world_model
+
+    if world_model is None and selected_model is None:
         st.warning('Neural world-model weights are not present yet. Run `train_world_model.py` once to generate `world_model.pt`.')
     else:
-        st.success('World Model loaded: sequence model predicts the next network state and attack-stage distribution.')
-        st.info('Architecture: time-windowed state vector → LSTM transition dynamics → next-state prediction + attack-stage prediction. The NSL-KDD prototype uses reproducible row-order sequences because the dataset has no timestamps; final deployment should use timestamped CIC-IDS/CTU-13/PCAP telemetry.')
         if os.path.exists('world_model_meta.json'):
             meta=json.load(open('world_model_meta.json'))
             m=meta.get('metrics',{})
@@ -1332,6 +1342,67 @@ elif page=='World Model':
             b.metric('World-model macro F1',f"{m.get('stage_macro_f1',0):.1%}")
             c.metric('Macro recall',f"{m.get('stage_macro_recall',0):.1%}")
             d.metric('Next-state MAE',f"{m.get('next_state_mae_standardized',0):.3f}")
+
+        st.markdown(r'#### 🔮 Multi-Step Autoregressive Trajectory Forecasting ($t+1 \dots t+K$)')
+        st.caption("Autoregressively projects network state vectors and attack stage distributions up to $K$ steps into the future.")
+
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            horizon_k = st.slider("Rollout Horizon (K Steps)", min_value=1, max_value=10, value=5)
+        with c2:
+            scenario_name = st.selectbox("Initial Attack Scenario", ["DOS_FLOOD", "PROBE_RECON", "R2L_BRUTEFORCE", "EXFIL_U2R", "NORMAL"])
+        with c3:
+            st.markdown("<br>", unsafe_allow_html=True)
+            run_rollout = st.button("🚀 Run Multi-Step Rollout", use_container_width=True)
+
+        # Generate seed sequence for scenario
+        if 'LivePacketStreamGenerator' in globals():
+            gen = LivePacketStreamGenerator()
+            gen.generate_packet_burst(scenario_name, burst_size=40)
+            flows = list(gen.active_flows.values())
+            seed_state = FlowStateEncoder.encode_flows_to_state(flows)
+        else:
+            seed_state = np.zeros(16, dtype=np.float32)
+
+        # Create sequence window of 8 frames
+        initial_seq = np.tile(seed_state, (8, 1))
+
+        if selected_model is not None and ('MultiStepRolloutEngine' in globals() and MultiStepRolloutEngine):
+            rollout_results = MultiStepRolloutEngine.predict_rollout(selected_model, initial_seq, horizon=horizon_k)
+
+            # Plotly trajectory chart
+            steps = [f"t+{r['step']}" for r in rollout_results]
+            risks = [r['cumulative_risk'] for r in rollout_results]
+            confidences = [r['confidence'] for r in rollout_results]
+
+            fig = go.Figure()
+            fig.add_trace(go.Scatter(x=steps, y=risks, mode='lines+markers', name='Cumulative Trajectory Risk', line=dict(color='#f87171', width=3)))
+            fig.add_trace(go.Scatter(x=steps, y=confidences, mode='lines+markers', name='Predicted Stage Confidence', line=dict(color='#60a5fa', width=2, dash='dash')))
+            fig.update_layout(
+                title=f"Multi-Step Autoregressive Risk Trajectory ({scenario_name} Scenario)",
+                xaxis_title="Future Step Horizon",
+                yaxis_title="Probability / Score",
+                template="plotly_dark",
+                height=380,
+                margin=dict(l=20, r=20, t=40, b=20)
+            )
+            st.plotly_chart(fig, use_container_width=True)
+
+            # Forecast Table
+            st.markdown('##### Step-by-Step Forecast Log')
+            forecast_rows = []
+            for r in rollout_results:
+                forecast_rows.append({
+                    'Horizon Step': f"t+{r['step']}",
+                    'Predicted Stage': r['predicted_stage'],
+                    'Stage Confidence': f"{r['confidence']:.1%}",
+                    'Cumulative Risk': f"{r['cumulative_risk']:.3f}",
+                    'Projected Attack Rate': f"{r['projected_state'][0]:.2f}",
+                    'Projected DoS Rate': f"{r['projected_state'][1]:.2f}",
+                    'Projected Probe Rate': f"{r['projected_state'][2]:.2f}"
+                })
+            st.dataframe(pd.DataFrame(forecast_rows), use_container_width=True)
+
         st.markdown('#### State representation')
         st.dataframe(pd.DataFrame({'State feature':STATE_NAMES,'Meaning':['overall malicious pressure','DoS share','probe/recon share','R2L share','U2R share','source bytes mean','destination bytes mean','flow duration mean','connection count mean','service count mean','SYN/error-rate proxy','RST/error-rate proxy','same-service concentration','service diversity','service diversity / window','log traffic volume']}),use_container_width=True)
         st.markdown('#### Progressive learning loop')
